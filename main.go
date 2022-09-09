@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"net/http"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	twitterscraper "github.com/n0madic/twitter-scraper"
 )
 
@@ -12,52 +14,130 @@ type (
 		from string
 		to   string
 	}
+
+	UserTweetsBody struct {
+		User      string   `json:"user"`
+		Daterange []string `json:"daterange"`
+		MaxTweet  int      `json:"maxTweet"`
+		Keyword   string   `json:"keyword"`
+	}
 )
 
 func main() {
-	date := Date{"2022-01-01", "2022-01-31"}
-	maxTweet := 50
-	tweets := searchUserTweetsWithKeyword("tournament", "light_kengo", date, maxTweet)
-
-	fmt.Println(tweets)
+	router := gin.Default()
+	router.POST("/searchUserTweets", searchUserTweets)
+	router.POST("/searchUserTweetsByKey", searchUserTweetsWithKeyword)
+	router.POST("/getTweetsByKey", getTweetsByKey)
+	router.Run("localhost:3019")
 }
 
-func searchUserTweetsWith(user string, daterange Date, maxTweet int) []twitterscraper.TweetResult {
+func searchUserTweets(ginContext *gin.Context) {
+	var userTweetsBody UserTweetsBody
 	scraper := twitterscraper.New()
 	tweets := []twitterscraper.TweetResult{}
-	query := "from:" + user
 
-	if (daterange != Date{}) {
-		query = "from:" + user + " since:" + daterange.from + " until:" + daterange.to
+	var from string
+	var to string
+
+	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
+		return
 	}
 
-	for tweet := range scraper.SearchTweets(context.Background(), query, maxTweet) {
+	query := "from:" + userTweetsBody.User
+
+	if userTweetsBody.Daterange != nil {
+		date1, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[0])
+		date2, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[1])
+		if compareDate := date1.Before(date2); compareDate == bool(true) {
+			from = userTweetsBody.Daterange[0]
+			to = userTweetsBody.Daterange[1]
+		} else {
+			from = userTweetsBody.Daterange[1]
+			to = userTweetsBody.Daterange[0]
+		}
+		query = "from:" + userTweetsBody.User + " since:" + from + " until:" + to
+	}
+
+	for tweet := range scraper.SearchTweets(context.Background(), query, userTweetsBody.MaxTweet) {
 		if tweet.Error != nil {
 			panic(tweet.Error)
 		}
 		tweets = append(tweets, *tweet)
 	}
 
-	return tweets
+	ginContext.IndentedJSON(http.StatusCreated, tweets)
 }
 
-func searchUserTweetsWithKeyword(keyword string, user string, daterange Date, maxTweet int) []twitterscraper.TweetResult {
+func searchUserTweetsWithKeyword(ginContext *gin.Context) {
+	var userTweetsBody UserTweetsBody
 	scraper := twitterscraper.New()
 	tweets := []twitterscraper.TweetResult{}
-	query := keyword + " from:" + user
+	query := userTweetsBody.Keyword + " from:" + userTweetsBody.User
 
-	if (daterange != Date{}) {
-		query = keyword + " from:" + user + " since:" + daterange.from + " until:" + daterange.to
+	var from string
+	var to string
+
+	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
+		return
 	}
 
-	for tweet := range scraper.SearchTweets(context.Background(), query, maxTweet) {
+	if userTweetsBody.Daterange != nil {
+		date1, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[0])
+		date2, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[1])
+		if compareDate := date1.Before(date2); compareDate == bool(true) {
+			from = userTweetsBody.Daterange[0]
+			to = userTweetsBody.Daterange[1]
+		} else {
+			from = userTweetsBody.Daterange[1]
+			to = userTweetsBody.Daterange[0]
+		}
+		query = userTweetsBody.Keyword + " from:" + userTweetsBody.User + " since:" + from + " until:" + to
+	}
+
+	for tweet := range scraper.SearchTweets(context.Background(), query, userTweetsBody.MaxTweet) {
 		if tweet.Error != nil {
 			panic(tweet.Error)
 		}
 		tweets = append(tweets, *tweet)
 	}
 
-	return tweets
+	ginContext.IndentedJSON(http.StatusCreated, tweets)
+}
+
+func getTweetsByKey(ginContext *gin.Context) {
+	var userTweetsBody UserTweetsBody
+	scraper := twitterscraper.New()
+	tweets := []twitterscraper.TweetResult{}
+	query := userTweetsBody.Keyword
+
+	var from string
+	var to string
+
+	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
+		return
+	}
+
+	if userTweetsBody.Daterange != nil {
+		date1, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[0])
+		date2, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[1])
+		if compareDate := date1.Before(date2); compareDate == bool(true) {
+			from = userTweetsBody.Daterange[0]
+			to = userTweetsBody.Daterange[1]
+		} else {
+			from = userTweetsBody.Daterange[1]
+			to = userTweetsBody.Daterange[0]
+		}
+		query = userTweetsBody.Keyword + " since:" + from + " until:" + to
+	}
+
+	for tweet := range scraper.SearchTweets(context.Background(), query, userTweetsBody.MaxTweet) {
+		if tweet.Error != nil {
+			panic(tweet.Error)
+		}
+		tweets = append(tweets, *tweet)
+	}
+
+	ginContext.IndentedJSON(http.StatusCreated, tweets)
 }
 
 func getUserProfile(username string) twitterscraper.Profile {
@@ -67,23 +147,4 @@ func getUserProfile(username string) twitterscraper.Profile {
 		panic(err)
 	}
 	return profile
-}
-
-func getTweetsByKey(keyword string, daterange Date, maxTweet int) []twitterscraper.TweetResult {
-	scraper := twitterscraper.New()
-	tweets := []twitterscraper.TweetResult{}
-	query := keyword
-
-	if (daterange != Date{}) {
-		query = keyword + " since:" + daterange.from + " until:" + daterange.to
-	}
-
-	for tweet := range scraper.SearchTweets(context.Background(), query, maxTweet) {
-		if tweet.Error != nil {
-			panic(tweet.Error)
-		}
-		tweets = append(tweets, *tweet)
-	}
-
-	return tweets
 }
