@@ -78,12 +78,20 @@ var neo4jUsername = viperEnvVar("username")
 var neo4jPassword = viperEnvVar("password")
 
 func main() {
-	router := gin.Default()
-	router.POST("/searchUserTweets", searchUserTweets)
-	router.POST("/searchUserTweetsByKey", searchUserTweetsWithKeyword)
-	router.POST("/getTweetsByKey", getTweetsByKey)
-	router.GET("/findAccount", findAccount)
-	router.Run("localhost:3019")
+	params := UserTweetsBody{
+		User:      "username",
+		Daterange: []string{"2022-09-12", "2022-08-01"},
+		MaxTweet:  1000,
+		Keyword:   "keyword",
+	}
+
+	tweets := searchUserTweets(params)
+	fmt.Printf("%+v\n", tweets)
+
+	for _ = range time.Tick(time.Hour * 1) {
+		tweets := searchUserTweets(params)
+		fmt.Printf("%+v\n", tweets)
+	}
 }
 
 func saveToNeo4j(query string, props map[string]interface{}) error {
@@ -146,18 +154,13 @@ func convertToMap(rawParams interface{}) map[string]interface{} {
 	return structs.Map(rawParams)
 }
 
-func searchUserTweets(ginContext *gin.Context) {
-	var userTweetsBody UserTweetsBody
+func searchUserTweets(userTweetsBody UserTweetsBody) []twitterscraper.TweetResult {
 	scraper := twitterscraper.New()
 	tweets := []twitterscraper.TweetResult{}
 
 	var from string
 	var to string
 	var datefrom, dateto time.Time
-
-	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
-		return
-	}
 
 	user := getAccount(userTweetsBody.User)
 
@@ -241,21 +244,16 @@ func searchUserTweets(ginContext *gin.Context) {
 		log.Fatal(err)
 	}
 
-	ginContext.IndentedJSON(http.StatusCreated, tweets)
+	return tweets
 }
 
-func searchUserTweetsWithKeyword(ginContext *gin.Context) {
-	var userTweetsBody UserTweetsBody
+func searchUserTweetsWithKeyword(userTweetsBody UserTweetsBody) {
 	scraper := twitterscraper.New()
 	tweets := []twitterscraper.TweetResult{}
 
 	var from string
 	var to string
 	var datefrom, dateto time.Time
-
-	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
-		return
-	}
 
 	user := getAccount(userTweetsBody.User)
 
@@ -340,22 +338,15 @@ func searchUserTweetsWithKeyword(ginContext *gin.Context) {
 	if err := saveToNeo4j(queryRel, map[string]interface{}{"props": params, "username": user.Username}); err != nil {
 		log.Fatal(err)
 	}
-
-	ginContext.IndentedJSON(http.StatusCreated, tweets)
 }
 
-func getTweetsByKey(ginContext *gin.Context) {
-	var userTweetsBody UserTweetsBody
+func getTweetsByKey(userTweetsBody UserTweetsBody) {
 	scraper := twitterscraper.New()
 	tweets := []twitterscraper.TweetResult{}
 
 	var from string
 	var to string
 	var datefrom, dateto time.Time
-
-	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
-		return
-	}
 
 	query := userTweetsBody.Keyword
 
@@ -455,8 +446,6 @@ func getTweetsByKey(ginContext *gin.Context) {
 			log.Fatal(err)
 		}
 	}
-
-	ginContext.IndentedJSON(http.StatusCreated, tweets)
 }
 
 func getAccount(username string) twitterscraper.Profile {
