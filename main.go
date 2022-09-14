@@ -38,6 +38,10 @@ type (
 		To        dbtype.Date
 		CreatedBy int
 	}
+
+	AccountBody struct {
+		Username string `json:"username"`
+	}
 )
 
 func viperEnvVar(key string) string {
@@ -78,6 +82,7 @@ func main() {
 	router.POST("/searchUserTweets", searchUserTweets)
 	router.POST("/searchUserTweetsByKey", searchUserTweetsWithKeyword)
 	router.POST("/getTweetsByKey", getTweetsByKey)
+	router.GET("/findAccount", findAccount)
 	router.Run("localhost:3019")
 }
 
@@ -461,4 +466,20 @@ func getAccount(username string) twitterscraper.Profile {
 		panic(err)
 	}
 	return profile
+}
+
+func findAccount(ginContext *gin.Context) {
+	var accountBody AccountBody
+
+	if err := ginContext.BindJSON(&accountBody); err != nil {
+		return
+	}
+
+	scraper := twitterscraper.New()
+	profile, err := scraper.GetProfile(accountBody.Username)
+	if err != nil {
+		panic(err)
+	}
+
+	ginContext.IndentedJSON(http.StatusCreated, profile)
 }
