@@ -139,10 +139,13 @@ func searchUserTweets(ginContext *gin.Context) {
 
 	var from string
 	var to string
+	var datefrom, dateto time.Time
 
 	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
 		return
 	}
+
+	user := getAccount(userTweetsBody.User)
 
 	query := "from:" + userTweetsBody.User
 
@@ -166,22 +169,61 @@ func searchUserTweets(ginContext *gin.Context) {
 		tweets = append(tweets, *tweet)
 	}
 
-	rawParams := funk.Map(tweets, func(x twitterscraper.TweetResult) TweetParams {
+	tweetParams := funk.Map(tweets, func(x twitterscraper.TweetResult) TweetParams {
 		return TweetParams{ID: x.ID, Text: x.Text, TimeParsed: neo4j.DateOf(x.TimeParsed)}
 	}).([]TweetParams)
 
-	fmt.Printf("%+v\n", rawParams)
+	datefrom, _ = time.Parse("2006-01-02", from)
+	dateto, _ = time.Parse("2006-01-02", to)
 
 	// Neo4j
+	// Input Account
+	queryAccount :=
+		`MERGE (a:Account {accountName: $props.accountName, accountId: $props.accountId})
+        ON CREATE
+        SET a.createdAt = datetime(),
+        a.createdBy = $props.createdBy,
+        a.from = $props.from,
+		a.to = $props.to`
 
-	params := convertToMapArray(rawParams)
+	paramsAccount := map[string]interface{}{
+		"accountName": user.Username,
+		"accountId":   user.UserID,
+		"from":        neo4j.DateOf(datefrom),
+		"to":          neo4j.DateOf(dateto),
+		"createdBy":   1,
+	}
 
-	fmt.Printf("%+v\n", params)
+	if err := saveToNeo4j(queryAccount, map[string]interface{}{"props": paramsAccount}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Input Twit
+	interfaceParams := make([]interface{}, 0)
+
+	for _, data := range tweetParams {
+		interfaceParams = append(interfaceParams, data)
+	}
+
+	params := convertToMapArray(interfaceParams)
 
 	if err := saveToNeo4j(`UNWIND $props AS map
 	MERGE (t:Twit {twitId: map.ID, message: map.Text, twitDate: map.TimeParsed})
 	ON CREATE
-	SET t.createdAt = $now`, map[string]interface{}{"props": params, "now": neo4j.DateOf(time.Now())}); err != nil {
+	SET t.createdAt = datetime()`, map[string]interface{}{"props": params}); err != nil {
+		log.Fatal(err)
+	}
+
+	//Input Relation
+	queryRel :=
+		`UNWIND $props AS map
+        MATCH (a:Account {accountName: $username}), (t:Twit {twitId: map.ID, message: map.Text, twitDate: map.TimeParsed})
+        MERGE (a)-[r:POSTING]->(t)
+        ON CREATE` +
+			"\nSET r.`tweet by user` = true\n" +
+			"ON MATCH\nSET r.`tweet by user` = true"
+
+	if err := saveToNeo4j(queryRel, map[string]interface{}{"props": params, "username": user.Username}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -192,14 +234,18 @@ func searchUserTweetsWithKeyword(ginContext *gin.Context) {
 	var userTweetsBody UserTweetsBody
 	scraper := twitterscraper.New()
 	tweets := []twitterscraper.TweetResult{}
-	query := userTweetsBody.Keyword + " from:" + userTweetsBody.User
 
 	var from string
 	var to string
+	var datefrom, dateto time.Time
 
 	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
 		return
 	}
+
+	user := getAccount(userTweetsBody.User)
+
+	query := userTweetsBody.Keyword + " from:" + userTweetsBody.User
 
 	if userTweetsBody.Daterange != nil {
 		date1, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[0])
@@ -221,6 +267,66 @@ func searchUserTweetsWithKeyword(ginContext *gin.Context) {
 		tweets = append(tweets, *tweet)
 	}
 
+	tweetParams := funk.Map(tweets, func(x twitterscraper.TweetResult) TweetParams {
+		return TweetParams{ID: x.ID, Text: x.Text, TimeParsed: neo4j.DateOf(x.TimeParsed)}
+	}).([]TweetParams)
+
+	datefrom, _ = time.Parse("2006-01-02", from)
+	dateto, _ = time.Parse("2006-01-02", to)
+
+	// Neo4j
+	// Input Account
+	queryAccount :=
+		`MERGE (a:Account {accountName: $props.accountName, accountId: $props.accountId})
+        ON CREATE
+        SET a.createdAt = datetime(),
+        a.createdBy = $props.createdBy,
+        a.from = $props.from,
+		a.to = $props.to`
+
+	paramsAccount := map[string]interface{}{
+		"accountName": user.Username,
+		"accountId":   user.UserID,
+		"from":        neo4j.DateOf(datefrom),
+		"to":          neo4j.DateOf(dateto),
+		"createdBy":   1,
+	}
+
+	if err := saveToNeo4j(queryAccount, map[string]interface{}{"props": paramsAccount}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Input Twit
+	interfaceParams := make([]interface{}, 0)
+
+	for _, data := range tweetParams {
+		interfaceParams = append(interfaceParams, data)
+	}
+
+	params := convertToMapArray(interfaceParams)
+
+	if err := saveToNeo4j(`UNWIND $props AS map
+	MERGE (t:Twit {twitId: map.ID, message: map.Text, twitDate: map.TimeParsed})
+	ON CREATE
+	SET t.createdAt = datetime()`, map[string]interface{}{"props": params}); err != nil {
+		log.Fatal(err)
+	}
+
+	//Input Relation
+	queryRel :=
+		`UNWIND $props AS map
+        MATCH (a:Account {accountName: $username}), (t:Twit {twitId: map.ID, message: map.Text, twitDate: map.TimeParsed})
+        MERGE (a)-[r:POSTING]->(t)
+        ON CREATE` +
+			"\nSET r.`tweet by user` = true\n" +
+			"r." + userTweetsBody.Keyword + " = true\n" +
+			"ON MATCH\nSET r.`tweet by user` = true\n" +
+			"r." + userTweetsBody.Keyword + " = true"
+
+	if err := saveToNeo4j(queryRel, map[string]interface{}{"props": params, "username": user.Username}); err != nil {
+		log.Fatal(err)
+	}
+
 	ginContext.IndentedJSON(http.StatusCreated, tweets)
 }
 
@@ -228,14 +334,18 @@ func getTweetsByKey(ginContext *gin.Context) {
 	var userTweetsBody UserTweetsBody
 	scraper := twitterscraper.New()
 	tweets := []twitterscraper.TweetResult{}
-	query := userTweetsBody.Keyword
 
 	var from string
 	var to string
+	var datefrom, dateto time.Time
 
 	if err := ginContext.BindJSON(&userTweetsBody); err != nil {
 		return
 	}
+
+	user := getAccount(userTweetsBody.User)
+
+	query := userTweetsBody.Keyword
 
 	if userTweetsBody.Daterange != nil {
 		date1, _ := time.Parse("2006-01-02", userTweetsBody.Daterange[0])
@@ -257,10 +367,70 @@ func getTweetsByKey(ginContext *gin.Context) {
 		tweets = append(tweets, *tweet)
 	}
 
+	tweetParams := funk.Map(tweets, func(x twitterscraper.TweetResult) TweetParams {
+		return TweetParams{ID: x.ID, Text: x.Text, TimeParsed: neo4j.DateOf(x.TimeParsed)}
+	}).([]TweetParams)
+
+	datefrom, _ = time.Parse("2006-01-02", from)
+	dateto, _ = time.Parse("2006-01-02", to)
+
+	// Neo4j
+	// Input Account
+	queryAccount :=
+		`MERGE (a:Account {accountName: $props.accountName, accountId: $props.accountId})
+        ON CREATE
+        SET a.createdAt = datetime(),
+        a.createdBy = $props.createdBy,
+        a.from = $props.from,
+		a.to = $props.to`
+
+	paramsAccount := map[string]interface{}{
+		"accountName": user.Username,
+		"accountId":   user.UserID,
+		"from":        neo4j.DateOf(datefrom),
+		"to":          neo4j.DateOf(dateto),
+		"createdBy":   1,
+	}
+
+	if err := saveToNeo4j(queryAccount, map[string]interface{}{"props": paramsAccount}); err != nil {
+		log.Fatal(err)
+	}
+
+	// Input Twit
+	interfaceParams := make([]interface{}, 0)
+
+	for _, data := range tweetParams {
+		interfaceParams = append(interfaceParams, data)
+	}
+
+	params := convertToMapArray(interfaceParams)
+
+	if err := saveToNeo4j(`UNWIND $props AS map
+	MERGE (t:Twit {twitId: map.ID, message: map.Text, twitDate: map.TimeParsed})
+	ON CREATE
+	SET t.createdAt = datetime()`, map[string]interface{}{"props": params}); err != nil {
+		log.Fatal(err)
+	}
+
+	//Input Relation
+	queryRel :=
+		`UNWIND $props AS map
+        MATCH (a:Account {accountName: $username}), (t:Twit {twitId: map.ID, message: map.Text, twitDate: map.TimeParsed})
+        MERGE (a)-[r:POSTING]->(t)
+        ON CREATE` +
+			"\nSET r.`tweet by user` = true\n" +
+			"r." + userTweetsBody.Keyword + " = true\n" +
+			"ON MATCH\nSET r.`tweet by user` = true\n" +
+			"r." + userTweetsBody.Keyword + " = true"
+
+	if err := saveToNeo4j(queryRel, map[string]interface{}{"props": params, "username": user.Username}); err != nil {
+		log.Fatal(err)
+	}
+
 	ginContext.IndentedJSON(http.StatusCreated, tweets)
 }
 
-func getUserProfile(username string) twitterscraper.Profile {
+func getAccount(username string) twitterscraper.Profile {
 	scraper := twitterscraper.New()
 	profile, err := scraper.GetProfile(username)
 	if err != nil {
