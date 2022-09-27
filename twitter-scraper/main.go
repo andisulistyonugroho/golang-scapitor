@@ -8,7 +8,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,21 +48,25 @@ func goDotEnvVariable(key string) string {
 func main() {
 	// find out if we have a scraping to do
 	scrapingTicket := getScrapingTicket()
-	// do scraping based on the ticket
-	tweets := []twitterscraper.TweetResult{}
-	tweets = searchingTweetByTicket(scrapingTicket)
-	fmt.Println(tweets)
-	jsonData := map[string]interface{}{
-		"listTweet": tweets,
-		"idScrap":   scrapingTicket.ID,
+
+	if scrapingTicket.ID > 0 {
+		flagScrapingTicketAsRunning(scrapingTicket.ID)
+		// do scraping based on the ticket
+		tweets := []twitterscraper.TweetResult{}
+		tweets = searchingTweetByTicket(scrapingTicket)
+
+		// fmt.Println(tweets)
+
+		tellAPItoSaveInGraphDB(tweets, scrapingTicket.ID)
 	}
-	url := "/TwitScraps/insertTweetByUserAndSpecificKeyword"
-	sendToLoopback(url, jsonData)
 }
 
 func getScrapingTicket() TwitScraps {
 	baseUrl := goDotEnvVariable("baseUrl")
-	resp, err := http.Get(baseUrl + `/TwitScraps/findOne?filter[where][statusRunning]=0&filter[order]=id%20desc`)
+	params := url.Values{}
+	params.Add("filter", `{"where":{"statusRunning":0}}`)
+
+	resp, err := http.Get(baseUrl + "/TwitScraps/findOne?" + params.Encode())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -77,6 +83,26 @@ func getScrapingTicket() TwitScraps {
 		panic(err)
 	}
 	return result
+}
+
+func flagScrapingTicketAsRunning(id int) {
+	jsonData := map[string]interface{}{
+		"statusRunning": 1,
+	}
+	url := "/TwitScraps/" + strconv.Itoa(id)
+	baseUrl := goDotEnvVariable("baseUrl")
+	payload, _ := json.Marshal(jsonData)
+	client := &http.Client{}
+	req, err := http.NewRequest(http.MethodPatch, baseUrl+url, bytes.NewBuffer(payload))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer resp.Body.Close()
 }
 
 func searchingTweetByTicket(ticket TwitScraps) []twitterscraper.TweetResult {
@@ -126,21 +152,24 @@ func searchingTweetByTicket(ticket TwitScraps) []twitterscraper.TweetResult {
 		since = since.AddDate(0, 0, 1)
 	}
 
-	// for tweet := range scraper.SearchTweets(context.Background(), queryString, 1000) {
-	// 	if tweet.Error != nil {
-	// 		panic(tweet.Error)
-	// 	}
-	// 	fmt.Println(*tweet)
-	// 	tweets = append(tweets, *tweet)
-	// }
-	fmt.Println("hasile", tweets)
-
 	return tweets
+}
+
+func tellAPItoSaveInGraphDB(tweets []twitterscraper.TweetResult, id int) {
+	jsonData := map[string]interface{}{
+		"tweets": tweets,
+		"id":     id,
+	}
+	url := "/TwitScraps/insert2GraphDB"
+	sendToLoopback(url, jsonData)
 }
 
 func sendToLoopback(url string, jsonData map[string]interface{}) {
 	baseUrl := goDotEnvVariable("baseUrl")
+	fmt.Println("SENDING TO API", baseUrl+url)
+
 	jsonVal, _ := json.Marshal(jsonData)
+
 	resp, err := http.Post(baseUrl+url, "application/json", bytes.NewBuffer(jsonVal))
 
 	if err != nil {
