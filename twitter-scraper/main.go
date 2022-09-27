@@ -23,12 +23,17 @@ type TwitScraps struct {
 	Account       string      `json:"account"`
 	AccountID     interface{} `json:"accountId"`
 	Keyword       string      `json:"keyword"`
-	From          string      `json:"from"`
-	To            string      `json:"to"`
+	Since         string      `json:"since"`
+	Until         string      `json:"until"`
 	CreatedAt     string      `json:"createdAt"`
 	CreatedBy     int         `json:"createdBy"`
 	StatusRunning bool        `json:"statusRunning"`
 	ID            int         `json:"id"`
+}
+
+type RequestDataGrouping struct {
+	Id        int                          `json:"id"`
+	DataGroup []twitterscraper.TweetResult `json:"dataGroup"`
 }
 
 // use godot package to load/read the .env file and
@@ -50,14 +55,14 @@ func main() {
 	scrapingTicket := getScrapingTicket()
 
 	if scrapingTicket.ID > 0 {
-		flagScrapingTicketAsRunning(scrapingTicket.ID)
+		// flagScrapingTicketAsRunning(scrapingTicket.ID)
 		// do scraping based on the ticket
 		tweets := []twitterscraper.TweetResult{}
 		tweets = searchingTweetByTicket(scrapingTicket)
-
-		// fmt.Println(tweets)
-
-		tellAPItoSaveInGraphDB(tweets, scrapingTicket.ID)
+		// send to auraDB via API
+		fmt.Println("ADA ", len(tweets), " RECORD")
+		requestGroup := generateRequestGroup(tweets, scrapingTicket.ID)
+		tellAPItoSaveInGraphDB(requestGroup)
 	}
 }
 
@@ -123,12 +128,12 @@ func searchingTweetByTicket(ticket TwitScraps) []twitterscraper.TweetResult {
 	if searchParam.Account != "" {
 		queryString += " (from:" + searchParam.Account + ")"
 	}
-	if searchParam.From != "" {
-		since, _ = time.Parse("2006-01-02", string(searchParam.From[0:10]))
+	if searchParam.Since != "" {
+		since, _ = time.Parse("2006-01-02", string(searchParam.Since[0:10]))
 	}
-	if searchParam.To != "" {
+	if searchParam.Until != "" {
 		fmt.Println("TO ADA")
-		today, _ = time.Parse("2006-01-02", string(searchParam.To[0:10]))
+		today, _ = time.Parse("2006-01-02", string(searchParam.Until[0:10]))
 
 	}
 
@@ -155,13 +160,37 @@ func searchingTweetByTicket(ticket TwitScraps) []twitterscraper.TweetResult {
 	return tweets
 }
 
-func tellAPItoSaveInGraphDB(tweets []twitterscraper.TweetResult, id int) {
-	jsonData := map[string]interface{}{
-		"tweets": tweets,
-		"id":     id,
+func generateRequestGroup(tweets []twitterscraper.TweetResult, id int) []RequestDataGrouping {
+	// split up all record to 20 rows per request
+	splitter := 20
+	rdg := []RequestDataGrouping{}
+	tweets20 := []twitterscraper.TweetResult{}
+
+	for i := 0; i < len(tweets); i++ {
+		tweets20 = append(tweets20, tweets[i])
+		if i > 0 && i%splitter == 0 {
+			rdg = append(rdg, RequestDataGrouping{id, tweets20})
+			tweets20 = []twitterscraper.TweetResult{}
+		} else if i == len(tweets)-1 {
+			rdg = append(rdg, RequestDataGrouping{id, tweets20})
+		}
 	}
+	fmt.Println("ADA ", len(rdg), "GROUP")
+	// c, _ := json.MarshalIndent(rdg, "", "\t")
+	// fmt.Println(string(c))
+	return rdg
+}
+
+func tellAPItoSaveInGraphDB(requestGroup []RequestDataGrouping) {
 	url := "/TwitScraps/insert2GraphDB"
-	sendToLoopback(url, jsonData)
+
+	for i := 0; i < len(requestGroup); i++ {
+		jsonData := map[string]interface{}{
+			"tweets": requestGroup[i].DataGroup,
+			"id":     requestGroup[i].Id,
+		}
+		sendToLoopback(url, jsonData)
+	}
 }
 
 func sendToLoopback(url string, jsonData map[string]interface{}) {
