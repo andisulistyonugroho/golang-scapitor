@@ -55,7 +55,7 @@ func main() {
 	scrapingTicket := getScrapingTicket()
 
 	if scrapingTicket.ID > 0 {
-		// flagScrapingTicketAsRunning(scrapingTicket.ID)
+		flagScrapingTicketRunState(scrapingTicket.ID, true)
 		// do scraping based on the ticket
 		tweets := []twitterscraper.TweetResult{}
 		tweets = searchingTweetByTicket(scrapingTicket)
@@ -63,13 +63,22 @@ func main() {
 		fmt.Println("ADA ", len(tweets), " RECORD")
 		requestGroup := generateRequestGroup(tweets, scrapingTicket.ID)
 		tellAPItoSaveInGraphDB(requestGroup)
+		flagScrapingTicketRunState(scrapingTicket.ID, false)
 	}
 }
 
 func getScrapingTicket() TwitScraps {
 	baseUrl := goDotEnvVariable("baseUrl")
 	params := url.Values{}
-	params.Add("filter", `{"where":{"statusRunning":0}}`)
+	today := time.Now()
+
+	params.Add("filter", `{"where":{`+
+		`"statusRunning":0,`+
+		`"or":[`+
+		`{"until":{"eq":null}},`+
+		`{"until":{"gte":"`+today.Format("2006-01-02")+`"}}`+
+		`]`+
+		`}}`)
 
 	resp, err := http.Get(baseUrl + "/TwitScraps/findOne?" + params.Encode())
 	if err != nil {
@@ -90,9 +99,9 @@ func getScrapingTicket() TwitScraps {
 	return result
 }
 
-func flagScrapingTicketAsRunning(id int) {
+func flagScrapingTicketRunState(id int, statusRunning bool) {
 	jsonData := map[string]interface{}{
-		"statusRunning": 1,
+		"statusRunning": statusRunning,
 	}
 	url := "/TwitScraps/" + strconv.Itoa(id)
 	baseUrl := goDotEnvVariable("baseUrl")
