@@ -81,6 +81,7 @@ func getScrapingTicket() TwitScraps {
 		`}}`)
 
 	resp, err := http.Get(baseUrl + "/TwitScraps/findOne?" + params.Encode())
+	resp.Header.Set("Authorization", goDotEnvVariable("scraperbotToken"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -109,6 +110,7 @@ func flagScrapingTicketRunState(id int, statusRunning bool) {
 	client := &http.Client{}
 	req, err := http.NewRequest(http.MethodPatch, baseUrl+url, bytes.NewBuffer(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", goDotEnvVariable("scraperbotToken"))
 
 	resp, err := client.Do(req)
 
@@ -209,6 +211,7 @@ func sendToLoopback(url string, jsonData map[string]interface{}) {
 	jsonVal, _ := json.Marshal(jsonData)
 
 	resp, err := http.Post(baseUrl+url, "application/json", bytes.NewBuffer(jsonVal))
+	resp.Header.Set("Authorization", goDotEnvVariable("scraperbotToken"))
 
 	if err != nil {
 		log.Fatal(err)
