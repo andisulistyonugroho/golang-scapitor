@@ -124,7 +124,7 @@ func flagScrapingTicketRunState(id int, statusRunning bool) {
 func searchingTweetByTicket(ticket TwitScraps) []twitterscraper.TweetResult {
 	scraper := twitterscraper.New()
 	scraper.SetSearchMode(twitterscraper.SearchLatest)
-	scraper.WithDelay(2)
+	scraper.WithDelay(15)
 
 	tweets := []twitterscraper.TweetResult{}
 	searchParam := ticket
