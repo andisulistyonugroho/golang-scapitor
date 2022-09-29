@@ -57,12 +57,15 @@ func main() {
 	if scrapingTicket.ID > 0 {
 		flagScrapingTicketRunState(scrapingTicket.ID, true)
 		// do scraping based on the ticket
-		tweets := []twitterscraper.TweetResult{}
-		tweets = searchingTweetByTicket(scrapingTicket)
+		// tweets := []twitterscraper.TweetResult{}
+		// tweets = searchingTweetByTicket(scrapingTicket)
 		// send to auraDB via API
-		fmt.Println("ADA ", len(tweets), " RECORD")
-		requestGroup := generateRequestGroup(tweets, scrapingTicket.ID)
-		tellAPItoSaveInGraphDB(requestGroup)
+		// sending2AuraDB(tweets, scrapingTicket.ID)
+		// fmt.Println("ADA ", len(tweets), " RECORD")
+		// requestGroup := generateRequestGroup(tweets, scrapingTicket.ID)
+		// tellAPItoSaveInGraphDB(requestGroup)
+
+		searchingTweetByTicket(scrapingTicket)
 		flagScrapingTicketRunState(scrapingTicket.ID, false)
 	}
 }
@@ -220,4 +223,11 @@ func sendToLoopback(url string, jsonData map[string]interface{}) {
 	var res map[string]interface{}
 
 	json.NewDecoder(resp.Body).Decode(&res)
+}
+
+func sending2AuraDB(tweets []twitterscraper.TweetResult, id int) {
+	// send to auraDB via API
+	fmt.Println("ADA ", len(tweets), " RECORD")
+	requestGroup := generateRequestGroup(tweets, id)
+	tellAPItoSaveInGraphDB(requestGroup)
 }
