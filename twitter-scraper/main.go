@@ -20,15 +20,16 @@ import (
 
 // A struct to map searching ticket
 type TwitScraps struct {
-	Account       string      `json:"account"`
-	AccountID     interface{} `json:"accountId"`
-	Keyword       string      `json:"keyword"`
-	Since         string      `json:"since"`
-	Until         string      `json:"until"`
-	CreatedAt     string      `json:"createdAt"`
-	CreatedBy     int         `json:"createdBy"`
-	StatusRunning bool        `json:"statusRunning"`
-	ID            int         `json:"id"`
+	Account          string      `json:"account"`
+	AccountID        interface{} `json:"accountId"`
+	Keyword          string      `json:"keyword"`
+	Since            string      `json:"since"`
+	Until            string      `json:"until"`
+	CreatedAt        string      `json:"createdAt"`
+	CreatedBy        int         `json:"createdBy"`
+	StatusRunning    bool        `json:"statusRunning"`
+	LastScrapingTime string      `json:"lastScrapingTime"`
+	ID               int         `json:"id"`
 }
 
 type RequestDataGrouping struct {
@@ -142,8 +143,8 @@ func searchingTweetByTicket(ticket TwitScraps) []twitterscraper.TweetResult {
 	if searchParam.Account != "" {
 		queryString += " (from:" + searchParam.Account + ")"
 	}
-	if searchParam.Since != "" {
-		since, _ = time.Parse("2006-01-02", string(searchParam.Since[0:10]))
+	if searchParam.LastScrapingTime != "" {
+		since, _ = time.Parse("2006-01-02", string(searchParam.LastScrapingTime[0:10]))
 	}
 	if searchParam.Until != "" {
 		fmt.Println("TO ADA")
@@ -167,6 +168,8 @@ func searchingTweetByTicket(ticket TwitScraps) []twitterscraper.TweetResult {
 			fmt.Println(*tweet)
 			tweets = append(tweets, *tweet)
 		}
+		// send to auraDB via API
+		sending2AuraDB(tweets, ticket.ID)
 
 		since = since.AddDate(0, 0, 1)
 	}
